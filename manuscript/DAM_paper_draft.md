@@ -212,6 +212,8 @@ Key distributional findings:
 
 This robustness extension shows that the tuned DAM remains low-event and exposure-bounded, with high probability of improving on fixed-price outcomes, but only intermittent dominance over FIDIC under synthetic futures. The final discussion therefore treats DAM as a governance-efficient stabiliser with scenario-contingent FIDIC performance, not a universal winner.
 
+Exposure-tail profile from the refreshed Monte Carlo run also indicates materially lower high-quantile employer exposure under DAM than FIDIC in road and building archetypes, with comparable containment in water.
+
 Figure 4. Monte Carlo outperformance probabilities
 
 ![Monte Carlo Outperformance Probabilities](../results/figures/mc_outperformance_probabilities.png)
@@ -219,6 +221,10 @@ Figure 4. Monte Carlo outperformance probabilities
 Figure 5. Monte Carlo reduction distributions
 
 ![Monte Carlo Reduction Distributions](../results/figures/mc_reduction_distributions.png)
+
+Figure 6. Monte Carlo employer-exposure ECDF
+
+![Monte Carlo Exposure ECDF](../results/figures/mc_exposure_ecdf.png)
 
 ### 6.6 Comparative evidence from lag-adjusted certificate-tracking simulation
 Companion simulation evidence (4-year hypothetical run, monthly certificates) reports that lag-adjusted escalation materially out-tracks static contemporaneous FIDIC-style adjustment on fit metrics:
