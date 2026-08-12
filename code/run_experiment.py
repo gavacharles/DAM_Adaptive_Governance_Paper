@@ -10,6 +10,15 @@ import numpy as np
 import pandas as pd
 
 
+plt.style.use("seaborn-v0_8-whitegrid")
+plt.rcParams.update({
+    "figure.dpi": 140,
+    "axes.titlesize": 13,
+    "axes.labelsize": 11,
+    "legend.fontsize": 9,
+})
+
+
 CAL_START = pd.Timestamp("2015-01-01")
 CAL_END = pd.Timestamp("2021-12-01")
 EVAL_START = pd.Timestamp("2022-01-01")
@@ -325,18 +334,18 @@ def plot_formula(out_dir: Path) -> None:
         [
             r"$\mathrm{WMVI}_t = \sum_{k=1}^{K} w_k z_{k,t}$",
             r"$B_t = \max(\mathrm{WMVI}_t-U,0) + \min(\mathrm{WMVI}_t-L,0)$",
-            r"$\Delta P_t = \mathrm{clip}(\gamma B_t P_t, -C^-_t, C^+_t)$",
+            r"$\Delta P_t = \mathrm{clip}(\gamma_{up} B_t^+ P_t - \gamma_{down} B_t^- P_t, -C^-_t, C^+_t)$",
         ]
     )
     ax.text(0.05, 0.70, formula_text, fontsize=18, va="top")
     ax.text(
         0.05,
         0.16,
-        "Terms: P_t = eligible interim payment; B_t = breach magnitude; "
-        "gamma = sensitivity; C^+, C^- = cap/collar bounds.",
+        "Terms: P_t = eligible interim payment; B_t^+, B_t^- = positive/negative breaches; "
+        "gamma_up, gamma_down = asymmetric responsiveness; C^+, C^- = cap/collar bounds.",
         fontsize=12,
     )
-    fig.suptitle("Dynamic Adjustment Mechanism (DAM) — Clause Formula", fontsize=16)
+    fig.suptitle("Dynamic Adjustment Mechanism (DAM) — Updated Clause Formula", fontsize=16)
     fig.tight_layout()
     fig.savefig(out_dir / "dam_formula.png", dpi=180)
     plt.close(fig)
@@ -344,13 +353,18 @@ def plot_formula(out_dir: Path) -> None:
 
 def plot_risk_exposure(ledger: pd.DataFrame, out_dir: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 6))
+    style_map = {
+        "Fixed-price": {"linestyle": "--", "linewidth": 2.2},
+        "FIDIC 13.8": {"linestyle": "-.", "linewidth": 2.0},
+        "DAM": {"linestyle": "-", "linewidth": 2.8},
+    }
     for regime, g in ledger.groupby("regime"):
         s = g.groupby("month")["margin"].mean()
-        ax.plot(s.index, s.values, label=regime, linewidth=2)
+        ax.plot(s.index, s.values, label=regime, **style_map.get(regime, {"linewidth": 2.0}))
 
     ax.axvspan(pd.Timestamp("2020-03-01"), pd.Timestamp("2021-06-01"), color="gray", alpha=0.2, label="COVID window")
     ax.axvspan(pd.Timestamp("2022-01-01"), pd.Timestamp("2022-12-01"), color="orange", alpha=0.2, label="2022 shock")
-    ax.set_title("Risk Exposure Comparison: Margin Path by Contract Regime")
+    ax.set_title("Risk Exposure Comparison: Margin Path by Contract Regime (Updated)")
     ax.set_ylabel("Margin (normalised)")
     ax.set_xlabel("Month")
     ax.legend(loc="best")
@@ -456,6 +470,11 @@ def plot_summary_bars(summary_df: pd.DataFrame, out_dir: Path) -> None:
         ax.set_title(ttl)
         ax.set_ylabel(ylbl)
         ax.legend(fontsize=8)
+
+    for ax in axes:
+        for p in ax.patches:
+            h = p.get_height()
+            ax.annotate(f"{h:.1e}", (p.get_x() + p.get_width() / 2.0, h), ha="center", va="bottom", fontsize=7, rotation=90)
 
     fig.tight_layout()
     fig.savefig(out_dir / "variance_comparison_bars.png", dpi=180)
