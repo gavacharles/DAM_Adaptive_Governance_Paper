@@ -699,6 +699,60 @@ def plot_mc_exposure_ecdf(mc_df: pd.DataFrame, out_dir: Path) -> None:
     plt.close(fig)
 
 
+def plot_applied_factor_paths(ledger: pd.DataFrame, out_dir: Path) -> None:
+    projects = ["road", "building", "water"]
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+    for ax, project in zip(axes, projects):
+        g = ledger[ledger["project"] == project]
+        for regime, rg in g.groupby("regime"):
+            s = rg.groupby("month")["applied_factor"].mean()
+            ax.step(s.index, s.values, where="post", label=regime, linewidth=1.8)
+        ax.set_title(f"{project.title()} applied adjustment factor (persistent path)")
+        ax.set_ylabel("Applied factor")
+        ax.legend(fontsize=8)
+    axes[-1].set_xlabel("Month")
+    fig.tight_layout()
+    fig.savefig(out_dir / "applied_factor_paths.png", dpi=180)
+    plt.close(fig)
+
+
+def plot_compensation_burden_tradeoff(calib: pd.DataFrame, selected: Params, out_dir: Path) -> None:
+    fig, ax = plt.subplots(figsize=(9, 5))
+    sc = ax.scatter(
+        calib["mean_event_ratio_vs_fidic"],
+        calib["mean_comp_ratio_vs_fidic"],
+        c=calib["mean_ratio_fixed"],
+        cmap="viridis",
+        alpha=0.7,
+        s=28,
+    )
+    sel = calib[
+        (np.isclose(calib["lambda_share"], selected.lambda_share))
+        & (np.isclose(calib["deadband"], selected.deadband))
+        & (np.isclose(calib["cap_up"], selected.cap_up))
+        & (np.isclose(calib["cap_down"], selected.cap_down))
+    ].head(1)
+    if not sel.empty:
+        ax.scatter(
+            sel["mean_event_ratio_vs_fidic"],
+            sel["mean_comp_ratio_vs_fidic"],
+            marker="*",
+            s=240,
+            color="red",
+            label="Selected DAM",
+            zorder=5,
+        )
+
+    ax.set_xlabel("Administrative burden ratio (DAM events / FIDIC events)")
+    ax.set_ylabel("Compensation ratio (DAM paid / FIDIC paid)")
+    ax.set_title("Compensation–Burden Tradeoff Surface")
+    ax.legend(loc="best")
+    fig.colorbar(sc, ax=ax, label="Mean DAM/Fixed variance ratio")
+    fig.tight_layout()
+    fig.savefig(out_dir / "compensation_burden_tradeoff.png", dpi=180)
+    plt.close(fig)
+
+
 def main() -> None:
     code_root = Path(__file__).resolve().parent
     paper_root = code_root.parent
@@ -801,6 +855,8 @@ def main() -> None:
     plot_mc_reduction_distribution(mc_df, out_fig)
     plot_mc_outperformance_prob(mc_outperf_df, out_fig)
     plot_mc_exposure_ecdf(mc_df, out_fig)
+    plot_applied_factor_paths(ledger_all, out_fig)
+    plot_compensation_burden_tradeoff(calib_df, best, out_fig)
     dam_first = ledger_all[(ledger_all["project"] == "road") & (ledger_all["regime"] == "DAM")].copy()
     stress_regime = Regime(
         "DAM",
