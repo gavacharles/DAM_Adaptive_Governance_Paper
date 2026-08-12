@@ -29,6 +29,8 @@ MC_SEED = 42
 MC_SHOCK_PROB = 0.08
 MC_SHOCK_SCALE = 1.8
 
+EXTRA_MACRO_CHANNELS = ["central_bank_rate", "lending_rate", "private_credit"]
+
 
 PROJECTS = {
     "road": {
@@ -91,11 +93,20 @@ def load_inputs(root: Path) -> Tuple[pd.DataFrame, Dict[str, float]]:
     with sens_path.open("r", encoding="utf-8") as f:
         sens = json.load(f)
 
-    macro_weights = {
-        "exchange_rate": float(abs(sens.get("exchange_rate_sensitivity", 1.0))),
-        "cpi": float(abs(sens.get("cpi_sensitivity", 1.0))),
+    fx_anchor = float(np.sqrt(abs(sens.get("exchange_rate_sensitivity", 1.0))))
+    cpi_anchor = float(np.sqrt(abs(sens.get("cpi_sensitivity", 1.0))))
+    structural_anchor = float(np.mean([fx_anchor, cpi_anchor]) * 0.75)
+
+    raw_weights = {
+        "exchange_rate": fx_anchor,
+        "cpi": cpi_anchor,
+        **{k: structural_anchor for k in EXTRA_MACRO_CHANNELS},
     }
+
+    macro_weights = {k: v for k, v in raw_weights.items() if k in panel.columns and v > 0}
     denom = sum(macro_weights.values())
+    if denom <= 0:
+        raise ValueError("No valid macro weights available for WMVI construction.")
     macro_weights = {k: v / denom for k, v in macro_weights.items()}
     return panel, macro_weights
 
@@ -677,6 +688,9 @@ def main() -> None:
     out_input.mkdir(parents=True, exist_ok=True)
 
     panel, macro_weights = load_inputs(workspace_root)
+    pd.DataFrame({"macro_component": list(macro_weights.keys()), "weight": list(macro_weights.values())}).to_csv(
+        out_data / "wmvi_macro_weights.csv", index=False
+    )
     basket_shares = build_cipi_basket_shares(PROJECTS)
     pd.DataFrame({"component": list(basket_shares.keys()), "share": list(basket_shares.values())}).to_csv(
         out_input / "cipi_basket_shares.csv", index=False

@@ -54,6 +54,7 @@ Current run status (2026-08-12):
 - Second-pass global multi-objective tuning executed.
 - Asymmetric DAM parameters selected and exported in `results/tables/selected_parameters.csv`.
 - Calibration search log exported in `results/tables/calibration_manifest.csv`.
+- WMVI macro channels expanded to include exchange rate, CPI, central bank rate, lending rate, and private credit.
 
 - Tables: `results/tables/`
   - `backtest_summary.csv`
@@ -63,6 +64,7 @@ Current run status (2026-08-12):
   - `monte_carlo_outperformance.csv`
   - `monthly_ledger.csv`
   - `selected_parameters.csv`
+  - `wmvi_macro_weights.csv`
   - `wmvi_series.csv`
 - Figures: `results/figures/`
   - `dam_formula.png`

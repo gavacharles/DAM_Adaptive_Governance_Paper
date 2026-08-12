@@ -1,2 +1,2 @@
 parameter_scope,trigger,gamma_up,gamma_down,cap_up,cap_down
-global,1.15,0.1,0.015,0.025,0.008
+global,1.05,0.1,0.015,0.008,0.008
