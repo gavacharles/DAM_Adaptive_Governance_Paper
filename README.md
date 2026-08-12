@@ -52,7 +52,7 @@ The end-to-end DAM experiment has been executed from `code/run_experiment.py` an
 
 Current run status (2026-08-12):
 - Second-pass global multi-objective tuning executed.
-- Asymmetric DAM parameters selected and exported in `results/tables/selected_parameters.csv`.
+- Persistent level-tracking DAM parameters (`lambda_share`, `deadband`, `cap_up`, `cap_down`) selected and exported in `results/tables/selected_parameters.csv`.
 - Calibration search log exported in `results/tables/calibration_manifest.csv`.
 - WMVI macro channels expanded to include exchange rate, CPI, central bank rate, lending rate, and private credit.
 

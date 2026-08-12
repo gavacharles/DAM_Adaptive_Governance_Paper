@@ -1,2 +1,2 @@
-parameter_scope,trigger,gamma_up,gamma_down,cap_up,cap_down
-global,1.05,0.1,0.015,0.008,0.008
+parameter_scope,lambda_share,deadband,cap_up,cap_down,wmvi_fast_trigger
+global,0.6,0.015,0.12,0.02,inf

@@ -28,6 +28,7 @@ MC_SIMULATIONS = 1200
 MC_SEED = 42
 MC_SHOCK_PROB = 0.08
 MC_SHOCK_SCALE = 1.8
+FIDIC_LAMBDA = 0.60
 
 EXTRA_MACRO_CHANNELS = ["central_bank_rate", "lending_rate", "private_credit"]
 
@@ -50,22 +51,22 @@ PROJECTS = {
 
 @dataclass(frozen=True)
 class Params:
-    trigger: float
-    gamma_up: float
-    gamma_down: float
+    lambda_share: float
+    deadband: float
     cap_up: float
     cap_down: float
+    wmvi_fast_trigger: float
 
 
 @dataclass(frozen=True)
 class Regime:
     name: str
     mode: str
-    trigger: float
-    gamma_up: float
-    gamma_down: float
+    lambda_share: float
+    deadband: float
     cap_up: float
     cap_down: float
+    wmvi_fast_trigger: float
 
 
 def _s_curve(n: int) -> np.ndarray:
@@ -171,27 +172,34 @@ def simulate_regime(
     fixed_cost = baseline * cost_ratio.reindex(months).values
     revenue = baseline.copy()
     adjustments = pd.Series(0.0, index=months)
+    applied_factor = pd.Series(0.0, index=months)
+    update_event = pd.Series(False, index=months)
+    a_prev = 0.0
 
     for i, dt in enumerate(months):
         p = float(baseline.loc[dt])
         w = float(wmvi.loc[dt])
 
-        if regime.mode == "fixed":
-            adj = 0.0
-        elif regime.mode == "fidic":
-            inflation = float(cost_ratio.loc[dt] - cost_ratio.shift(1).loc[dt]) if i > 0 else 0.0
-            adj = 0.60 * inflation * p
-        else:  # dam
-            if abs(w) > regime.trigger:
-                breach = abs(w) - regime.trigger
-                direction = 1.0 if (cost_ratio.loc[dt] >= cost_ratio.shift(1).loc[dt] if i > 0 else True) else -1.0
-                gamma = regime.gamma_up if direction > 0 else regime.gamma_down
-                adj = direction * gamma * breach * p
-            else:
-                adj = 0.0
+        entitlement = regime.lambda_share * float(cost_ratio.loc[dt] - 1.0)
+        target_factor = float(np.clip(entitlement, -regime.cap_down, regime.cap_up))
 
-        adj = float(np.clip(adj, -regime.cap_down * p, regime.cap_up * p))
+        if regime.mode == "fixed":
+            a_t = 0.0
+        elif regime.mode == "fidic":
+            # Correct Sub-Clause 13.8 style level multiplier logic.
+            a_t = target_factor
+        else:  # dam (persistent level-tracking with deadband gating)
+            fast_gate = abs(w) >= regime.wmvi_fast_trigger
+            if (abs(target_factor - a_prev) >= regime.deadband) or fast_gate:
+                a_t = target_factor
+            else:
+                a_t = a_prev
+
+        adj = float(a_t * p)
         adjustments.loc[dt] = adj
+        applied_factor.loc[dt] = a_t
+        update_event.loc[dt] = abs(a_t - a_prev) > 1e-12
+        a_prev = a_t
         revenue.loc[dt] += adj
 
     margin = revenue - fixed_cost
@@ -207,12 +215,13 @@ def simulate_regime(
             "margin": margin.values,
             "wmvi": wmvi.reindex(months).values,
             "employer_exposure": employer_exposure.values,
+            "applied_factor": applied_factor.values,
             "regime": regime.name,
         }
     )
-    out["event"] = out["adjustment"].abs() > 1e-12
-    signed_caps = np.where(out["adjustment"] >= 0, regime.cap_up * out["base_payment"], regime.cap_down * out["base_payment"])
-    out["cap_hit"] = (out["adjustment"].abs() >= (np.abs(signed_caps) - 1e-12)) & out["event"]
+    out["event"] = update_event.values
+    signed_caps = np.where(out["applied_factor"] >= 0, regime.cap_up, regime.cap_down)
+    out["cap_hit"] = (out["applied_factor"].abs() >= (np.abs(signed_caps) - 1e-12)) & out["event"]
     return out
 
 
@@ -249,16 +258,16 @@ def run_monte_carlo(project_inputs: Dict[str, dict], best: Params, n_sims: int =
         if empirical.empty:
             continue
 
-        fixed = Regime("Fixed-price", "fixed", trigger=9.0, gamma_up=0.0, gamma_down=0.0, cap_up=0.0, cap_down=0.0)
-        fidic = Regime("FIDIC 13.8", "fidic", trigger=0.0, gamma_up=0.0, gamma_down=0.0, cap_up=0.05, cap_down=0.05)
+        fixed = Regime("Fixed-price", "fixed", lambda_share=0.0, deadband=0.0, cap_up=0.0, cap_down=0.0, wmvi_fast_trigger=np.inf)
+        fidic = Regime("FIDIC 13.8", "fidic", lambda_share=FIDIC_LAMBDA, deadband=0.0, cap_up=0.50, cap_down=0.50, wmvi_fast_trigger=np.inf)
         dam = Regime(
             "DAM",
             "dam",
-            trigger=best.trigger,
-            gamma_up=best.gamma_up,
-            gamma_down=best.gamma_down,
+            lambda_share=best.lambda_share,
+            deadband=best.deadband,
             cap_up=best.cap_up,
             cap_down=best.cap_down,
+            wmvi_fast_trigger=best.wmvi_fast_trigger,
         )
         regimes = [fixed, fidic, dam]
 
@@ -334,29 +343,31 @@ def _train_slice(months: pd.DatetimeIndex) -> pd.DatetimeIndex:
 
 def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.DataFrame]:
     candidates = []
-    triggers = np.round(np.arange(0.65, 1.201, 0.05), 3)
-    gammas_up = np.round(np.arange(0.03, 0.101, 0.01), 3)
-    gammas_down = np.round(np.arange(0.015, 0.051, 0.005), 3)
-    caps_up = np.round(np.array([0.008, 0.010, 0.012, 0.015, 0.020, 0.025]), 3)
-    caps_down = np.round(np.array([0.008, 0.010, 0.012, 0.015]), 3)
+    lambda_shares = np.round(np.array([0.50, 0.55, 0.60, 0.65, 0.70]), 3)
+    deadbands = np.round(np.array([0.005, 0.010, 0.015, 0.020, 0.025]), 3)
+    caps_up = np.round(np.array([0.08, 0.12, 0.16, 0.20, 0.25]), 3)
+    caps_down = np.round(np.array([0.02, 0.04, 0.06, 0.08]), 3)
+    wmvi_fast_triggers = [np.inf, 1.25, 1.50]
 
-    for trigger in triggers:
-        for gamma_up in gammas_up:
-            for gamma_down in gammas_down:
-                for cap_up in caps_up:
-                    for cap_down in caps_down:
-                        candidates.append((trigger, gamma_up, gamma_down, cap_up, cap_down))
+    for lambda_share in lambda_shares:
+        for deadband in deadbands:
+            for cap_up in caps_up:
+                for cap_down in caps_down:
+                    for fast_t in wmvi_fast_triggers:
+                        candidates.append((lambda_share, deadband, cap_up, cap_down, fast_t))
 
     rows = []
-    for trigger, gamma_up, gamma_down, cap_up, cap_down in candidates:
-        dam_regime = Regime("DAM", "dam", trigger, gamma_up, gamma_down, cap_up, cap_down)
-        fixed_regime = Regime("Fixed-price", "fixed", 9.0, 0.0, 0.0, 0.0, 0.0)
-        fidic_regime = Regime("FIDIC 13.8", "fidic", 0.0, 0.0, 0.0, 0.05, 0.05)
+    for lambda_share, deadband, cap_up, cap_down, fast_t in candidates:
+        dam_regime = Regime("DAM", "dam", lambda_share, deadband, cap_up, cap_down, fast_t)
+        fixed_regime = Regime("Fixed-price", "fixed", 0.0, 0.0, 0.0, 0.0, np.inf)
+        fidic_regime = Regime("FIDIC 13.8", "fidic", FIDIC_LAMBDA, 0.0, 0.50, 0.50, np.inf)
 
         ratios_fixed = []
         ratios_fidic = []
         improvements_fixed = []
-        events = []
+        compensation_ratio_vs_fidic = []
+        dam_events = []
+        fidic_events = []
         exposures = []
         dom_fidic = 0
 
@@ -381,24 +392,31 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
             ratios_fixed.append(ratio_fix)
             ratios_fidic.append(ratio_fid)
             improvements_fixed.append(1.0 - ratio_fix)
-            events.append(int(dam_df["event"].sum()))
+            dam_events.append(int(dam_df["event"].sum()))
+            fidic_events.append(int(fid_df["event"].sum()))
             exposures.append(float(dam_df["employer_exposure"].max()))
+            dam_paid = float(dam_df["adjustment"].clip(lower=0).sum())
+            fid_paid = float(fid_df["adjustment"].clip(lower=0).sum())
+            compensation_ratio_vs_fidic.append(dam_paid / max(fid_paid, 1e-12))
             if var_dam <= var_fid:
                 dom_fidic += 1
 
+        event_ratio = float(np.mean(np.array(dam_events) / np.maximum(np.array(fidic_events), 1.0)))
+
         feasible = (
-            float(np.mean(ratios_fixed)) <= 1.0
-            and float(np.max(ratios_fixed)) <= 1.05
-            and float(np.mean(ratios_fidic)) <= 1.08
-            and int(np.max(events)) <= 8
-            and float(np.max(exposures)) <= 0.02
+            float(np.mean(ratios_fixed)) <= 0.40
+            and float(np.mean(ratios_fidic)) <= 1.10
+            and event_ratio <= 0.35
+            and float(np.mean(compensation_ratio_vs_fidic)) <= 0.95
+            and float(np.max(exposures)) <= 0.15
         )
 
         score = (
-            0.50 * float(np.mean(ratios_fixed))
-            + 0.35 * float(np.mean(ratios_fidic))
-            + 0.15 * float(np.max(ratios_fixed))
-            - 0.10 * float(np.min(improvements_fixed))
+            0.55 * float(np.mean(ratios_fixed))
+            + 0.15 * float(np.mean(ratios_fidic))
+            + 0.15 * event_ratio
+            + 0.10 * float(np.mean(compensation_ratio_vs_fidic))
+            + 0.05 * float(np.max(ratios_fixed))
         )
 
         if not feasible:
@@ -406,19 +424,21 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
 
         rows.append(
             {
-                "trigger": trigger,
-                "gamma_up": gamma_up,
-                "gamma_down": gamma_down,
+                "lambda_share": lambda_share,
+                "deadband": deadband,
                 "cap_up": cap_up,
                 "cap_down": cap_down,
+                "wmvi_fast_trigger": fast_t,
                 "objective": score,
                 "feasible": int(feasible),
                 "mean_ratio_fixed": float(np.mean(ratios_fixed)),
                 "mean_ratio_fidic": float(np.mean(ratios_fidic)),
                 "max_ratio_fixed": float(np.max(ratios_fixed)),
                 "min_improvement_fixed": float(np.min(improvements_fixed)),
-                "mean_events": float(np.mean(events)),
-                "max_events": int(np.max(events)),
+                "mean_events": float(np.mean(dam_events)),
+                "max_events": int(np.max(dam_events)),
+                "mean_event_ratio_vs_fidic": event_ratio,
+                "mean_comp_ratio_vs_fidic": float(np.mean(compensation_ratio_vs_fidic)),
                 "max_exposure": float(np.max(exposures)),
                 "dom_fidic_count": int(dom_fidic),
             }
@@ -427,11 +447,11 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
     grid_df = pd.DataFrame(rows).sort_values(["feasible", "objective"], ascending=[False, True]).reset_index(drop=True)
     best = grid_df.iloc[0]
     return Params(
-        trigger=float(best["trigger"]),
-        gamma_up=float(best["gamma_up"]),
-        gamma_down=float(best["gamma_down"]),
+        lambda_share=float(best["lambda_share"]),
+        deadband=float(best["deadband"]),
         cap_up=float(best["cap_up"]),
         cap_down=float(best["cap_down"]),
+        wmvi_fast_trigger=float(best["wmvi_fast_trigger"]),
     ), grid_df
 
 
@@ -441,16 +461,17 @@ def plot_formula(out_dir: Path) -> None:
     formula_text = "\n\n".join(
         [
             r"$\mathrm{WMVI}_t = \sum_{k=1}^{K} w_k z_{k,t}$",
-            r"$B_t = \max(\mathrm{WMVI}_t-U,0) + \min(\mathrm{WMVI}_t-L,0)$",
-            r"$\Delta P_t = \mathrm{clip}(\gamma_{up} B_t^+ P_t - \gamma_{down} B_t^- P_t, -C^-_t, C^+_t)$",
+            r"$\tau_t = \lambda\,(R_t-1)$",
+            r"$a_t = \mathrm{clip}(\tau_t,-A^-,A^+)\;\mathrm{if}\;|\tau_t-a_{t-1}|\geq\delta,\;\mathrm{else}\;a_t=a_{t-1}$",
+            r"$\Delta P_t = a_t P_t$",
         ]
     )
     ax.text(0.05, 0.70, formula_text, fontsize=18, va="top")
     ax.text(
         0.05,
         0.16,
-        "Terms: P_t = eligible interim payment; B_t^+, B_t^- = positive/negative breaches; "
-        "gamma_up, gamma_down = asymmetric responsiveness; C^+, C^- = cap/collar bounds.",
+        "Terms: R_t = level cost index ratio; lambda = compensated escalation share; "
+        "delta = deadband; A^+, A^- = factor caps; a_t persists between updates.",
         fontsize=12,
     )
     fig.suptitle("Dynamic Adjustment Mechanism (DAM) — Updated Clause Formula", fontsize=16)
@@ -483,9 +504,9 @@ def plot_risk_exposure(ledger: pd.DataFrame, out_dir: Path) -> None:
 
 def plot_sensitivity_surface(calib: pd.DataFrame, out_dir: Path) -> None:
     p = calib.copy()
-    p["trigger_label"] = p["trigger"].map(lambda x: f"{x:.2f}")
+    p["deadband_label"] = p["deadband"].map(lambda x: f"{x:.3f}")
     p["cap_label"] = p["cap_up"].map(lambda x: f"{x:.3f}")
-    piv = p.pivot_table(index="trigger_label", columns="cap_label", values="objective", aggfunc="mean")
+    piv = p.pivot_table(index="deadband_label", columns="cap_label", values="objective", aggfunc="mean")
 
     fig, ax = plt.subplots(figsize=(8, 5))
     m = ax.imshow(piv.values, aspect="auto", cmap="viridis")
@@ -494,7 +515,7 @@ def plot_sensitivity_surface(calib: pd.DataFrame, out_dir: Path) -> None:
     ax.set_yticks(range(len(piv.index)))
     ax.set_yticklabels(piv.index)
     ax.set_xlabel("Cap fraction")
-    ax.set_ylabel("Trigger")
+    ax.set_ylabel("Deadband")
     ax.set_title("Parameter Surface (Lower is better)")
     fig.colorbar(m, ax=ax, label="Objective")
     fig.tight_layout()
@@ -520,11 +541,14 @@ def plot_stress_caps(base_df: pd.DataFrame, regime: Regime, out_dir: Path) -> No
     shocked["base_payment"] = shocked["base_payment"]
 
     p = shocked["base_payment"].values
-    w = shocked["wmvi"].values
-    upward = regime.gamma_up * np.maximum(np.abs(w) - regime.trigger, 0.0) * p
-    downward = regime.gamma_down * np.maximum(np.abs(w) - regime.trigger, 0.0) * p
-    uncapped = np.where(w >= 0, upward, -downward)
-    capped = np.clip(uncapped, -regime.cap_down * p, regime.cap_up * p)
+    # Recover ratio from ledger identity: cost = base_payment * ratio.
+    ratio = shocked["cost"].values / np.maximum(p, 1e-12)
+    stressed_ratio = ratio * 1.08
+    entitlement = regime.lambda_share * (stressed_ratio - 1.0)
+    uncapped_factor = entitlement
+    capped_factor = np.clip(uncapped_factor, -regime.cap_down, regime.cap_up)
+    uncapped = uncapped_factor * p
+    capped = capped_factor * p
 
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(shocked["month"], uncapped, label="Uncapped adjustment", linewidth=1.8)
@@ -722,16 +746,16 @@ def main() -> None:
         cost_ratio = project_inputs[project]["cost_ratio"]
 
         regimes = [
-            Regime("Fixed-price", "fixed", trigger=9.0, gamma_up=0.0, gamma_down=0.0, cap_up=0.0, cap_down=0.0),
-            Regime("FIDIC 13.8", "fidic", trigger=0.0, gamma_up=0.0, gamma_down=0.0, cap_up=0.05, cap_down=0.05),
+            Regime("Fixed-price", "fixed", lambda_share=0.0, deadband=0.0, cap_up=0.0, cap_down=0.0, wmvi_fast_trigger=np.inf),
+            Regime("FIDIC 13.8", "fidic", lambda_share=FIDIC_LAMBDA, deadband=0.0, cap_up=0.50, cap_down=0.50, wmvi_fast_trigger=np.inf),
             Regime(
                 "DAM",
                 "dam",
-                trigger=best.trigger,
-                gamma_up=best.gamma_up,
-                gamma_down=best.gamma_down,
+                lambda_share=best.lambda_share,
+                deadband=best.deadband,
                 cap_up=best.cap_up,
                 cap_down=best.cap_down,
+                wmvi_fast_trigger=best.wmvi_fast_trigger,
             ),
         ]
 
@@ -751,11 +775,11 @@ def main() -> None:
         [
             {
                 "parameter_scope": "global",
-                "trigger": best.trigger,
-                "gamma_up": best.gamma_up,
-                "gamma_down": best.gamma_down,
+                "lambda_share": best.lambda_share,
+                "deadband": best.deadband,
                 "cap_up": best.cap_up,
                 "cap_down": best.cap_down,
+                "wmvi_fast_trigger": best.wmvi_fast_trigger,
             }
         ]
     ).to_csv(out_data / "selected_parameters.csv", index=False)
@@ -781,11 +805,11 @@ def main() -> None:
     stress_regime = Regime(
         "DAM",
         "dam",
-        trigger=best.trigger,
-        gamma_up=best.gamma_up,
-        gamma_down=best.gamma_down,
+        lambda_share=best.lambda_share,
+        deadband=best.deadband,
         cap_up=best.cap_up,
         cap_down=best.cap_down,
+        wmvi_fast_trigger=best.wmvi_fast_trigger,
     )
     plot_stress_caps(dam_first, stress_regime, out_fig)
 
