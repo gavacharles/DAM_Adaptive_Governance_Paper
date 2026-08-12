@@ -75,25 +75,40 @@ B_t =
 \end{cases}
 $$
 
+In the revised implementation, WMVI is retained as an optional fast-gate, but entitlement is primarily level-based through the project cost ratio $R_t$.
+
 ### 4.3 Payment adjustment formula
 For eligible interim payment base $P_t$:
 
 $$
-\Delta P_t = \operatorname{clip}\left(\gamma B_t P_t,\,-C^-_t,\,C^+_t\right),
+	au_t = \lambda(R_t-1),
+$$
+
+$$
+a_t =
+\begin{cases}
+\operatorname{clip}(\tau_t,-A^-,A^+), & \text{if } |\tau_t-a_{t-1}|\geq\delta,\\
+a_{t-1}, & \text{otherwise,}
+\end{cases}
+$$
+
+$$
+\Delta P_t = a_t P_t.
 $$
 
 where:
-- $\gamma$ is adjustment sensitivity,
-- $C^+_t$ and $C^-_t$ are cap/collar bounds,
-- `clip` enforces employer exposure controls,
-- operation is symmetric for upward and downward corrections.
+- $\lambda$ is the compensated share of realised level escalation,
+- $R_t$ is a level cost-ratio index,
+- $\delta$ is the deadband (administrative efficiency dial),
+- $A^+,A^-$ are factor caps,
+- $a_t$ is persistent across months until deadband breach.
 
 Adjusted payment is $P_t^{*}=P_t+\Delta P_t$.
 
 ### 4.4 Contract regimes compared
 1. Fixed-price (no dynamic adjustment).
-2. FIDIC 13.8 baseline (competently parameterised with best plausible local indexation choices).
-3. DAM (triggered, capped, symmetric).
+2. FIDIC 13.8 baseline in level-multiplier form ($P_n=a+bL_n/L_0+\dots$), implemented as continuous level tracking with $\lambda=0.60$.
+3. DAM (persistent level-tracking with deadband gating and factor caps).
 
 ### 4.5 Complementary lag-adjusted escalation layer (integrated from companion workstream)
 To align contract logic with observed transmission delays, this paper can be read alongside a lag-adjusted escalation specification:
@@ -157,11 +172,11 @@ Variance and tail metrics across fixed-price, FIDIC 13.8, and DAM; shock episode
 The second-pass calibration was executed as a global multi-objective search with asymmetric DAM parameters and dual-baseline scoring (Fixed-price and FIDIC 13.8), using the hard train/eval split in code. In this updated run, WMVI explicitly includes exchange rate, CPI, central bank rate, lending rate, and private credit channels.
 
 Selected global DAM parameters:
-- Trigger = 1.05
-- $\gamma_{up}=0.10$
-- $\gamma_{down}=0.015$
-- $cap_{up}=0.008$
-- $cap_{down}=0.008$
+- $\lambda=0.60$
+- $\delta=0.015$
+- $A^+=0.12$
+- $A^-=0.02$
+- WMVI fast-trigger: disabled in selected solution (deadband-gated level tracking only)
 
 Calibration manifest size and filter result:
 - 18,432 candidate settings evaluated.
@@ -169,48 +184,49 @@ Calibration manifest size and filter result:
 
 Out-of-sample back-test outcomes (2015–2025 windowed project simulations):
 - DAM vs Fixed-price margin-variance reduction:
-	- Road: 2.05%
-	- Building: 9.78%
-	- Water: 5.73%
-	- Mean reduction: 5.85%
+	- Road: 68.49%
+	- Building: 78.93%
+	- Water: 82.78%
+	- Mean reduction: 76.73%
 - DAM vs FIDIC 13.8 margin-variance change:
-	- Road: -10.70%
-	- Building: -2.24%
-	- Water: -6.37%
-	- Mean change: -6.43%
+	- Road: -96.96%
+	- Building: -31.66%
+	- Water: -7.60%
+	- Mean change: -45.41%
 - Average adjustment-event count:
-	- DAM: 6.67
-	- FIDIC 13.8: 19.67
+	- DAM: 3.67
+	- FIDIC 13.8: 20.67
+	- Mean event ratio (DAM/FIDIC): 18.1%
 
 Table 1. Headline out-of-sample performance (tuned DAM)
 
 | Project | DAM vs Fixed margin variance | DAM vs FIDIC 13.8 margin variance | DAM adjustment events | FIDIC 13.8 adjustment events | DAM max employer exposure |
 |---|---:|---:|---:|---:|---:|
-| Road | +2.05% | -10.70% | 7 | 23 | 0.0018 |
-| Building | +9.78% | -2.24% | 6 | 17 | 0.0019 |
-| Water | +5.73% | -6.37% | 7 | 19 | 0.0020 |
-| Mean / total signal | +5.85% | -6.43% | 6.67 | 19.67 | — |
+| Road | +68.49% | -96.96% | 3 | 24 | 0.0964 |
+| Building | +78.93% | -31.66% | 3 | 18 | 0.0390 |
+| Water | +82.78% | -7.60% | 5 | 20 | 0.0407 |
+| Mean / total signal | +76.73% | -45.41% | 3.67 | 20.67 | — |
 
 Figure 3. Risk-exposure profile under Fixed-price, FIDIC 13.8, and tuned DAM
 
 ![Risk Exposure Comparison](../results/figures/risk_exposure_comparison.png)
 
-Interpretation: with the expanded macro channel set, tuned DAM remains strongly better than fixed-price and still materially lower-event than FIDIC, but no longer dominates FIDIC on deterministic margin variance. This reframes the contribution as governance efficiency plus fixed-price stabilisation, with FIDIC-relative gains becoming scenario-dependent.
+Interpretation: after correcting FIDIC to its level-multiplier form and enforcing persistence in DAM, the mechanism now delivers large stabilisation gains over fixed-price while using far fewer administrative events than continuous FIDIC indexation. However, deterministic variance remains above FIDIC in these windows, so the defensible claim is high stabilisation efficiency relative to fixed-price, not universal superiority to full continuous indexation.
 
 ### 6.5 Monte Carlo robustness extension (executed: 1,200 simulations per archetype)
 To test stability beyond the historical path, the paper now includes a Monte Carlo project simulation layer with joint cost-return and WMVI resampling, tail-shock injection, and full regime replay.
 
 Key distributional findings:
 - Probability DAM beats Fixed-price on margin variance:
-	- Road: 0.871
-	- Building: 0.556
-	- Water: 0.863
+	- Road: 1.000
+	- Building: 0.931
+	- Water: 1.000
 - Probability DAM beats FIDIC 13.8 on margin variance:
-	- Road: 0.143
-	- Building: 0.183
-	- Water: 0.265
+	- Road: 0.034
+	- Building: 0.031
+	- Water: 0.016
 
-This robustness extension shows that the tuned DAM remains low-event and exposure-bounded, with high probability of improving on fixed-price outcomes, but only intermittent dominance over FIDIC under synthetic futures. The final discussion therefore treats DAM as a governance-efficient stabiliser with scenario-contingent FIDIC performance, not a universal winner.
+This robustness extension shows that the tuned DAM remains low-event and strongly superior to fixed-price under uncertainty, while full continuous FIDIC level-indexation often remains the tighter variance tracker. The final discussion therefore positions DAM as an adoptability-efficient compromise between fixed-price fragility and high-frequency continuous indexation burden.
 
 Exposure-tail profile from the refreshed Monte Carlo run also indicates materially lower high-quantile employer exposure under DAM than FIDIC in road and building archetypes, with comparable containment in water.
 
