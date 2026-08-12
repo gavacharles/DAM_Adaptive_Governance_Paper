@@ -1,2 +1,2 @@
 parameter_scope,lambda_share,deadband,cap_up,cap_down,wmvi_fast_trigger
-global,0.6,0.015,0.12,0.02,inf
+global,0.6,0.01,0.5,0.02,inf

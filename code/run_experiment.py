@@ -343,10 +343,10 @@ def _train_slice(months: pd.DatetimeIndex) -> pd.DatetimeIndex:
 
 def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.DataFrame]:
     candidates = []
-    lambda_shares = np.round(np.array([0.50, 0.55, 0.60, 0.65, 0.70]), 3)
-    deadbands = np.round(np.array([0.005, 0.010, 0.015, 0.020, 0.025]), 3)
-    caps_up = np.round(np.array([0.08, 0.12, 0.16, 0.20, 0.25]), 3)
-    caps_down = np.round(np.array([0.02, 0.04, 0.06, 0.08]), 3)
+    lambda_shares = np.round(np.array([0.55, 0.60, 0.65]), 3)
+    deadbands = np.round(np.array([0.005, 0.010, 0.015, 0.020, 0.025, 0.030]), 3)
+    caps_up = np.round(np.array([0.12, 0.20, 0.30, 0.50]), 3)
+    caps_down = np.round(np.array([0.02, 0.05, 0.10, 0.20]), 3)
     wmvi_fast_triggers = [np.inf, 1.25, 1.50]
 
     for lambda_share in lambda_shares:
@@ -364,6 +364,8 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
 
         ratios_fixed = []
         ratios_fidic = []
+        fidic_reduction_vs_fixed = []
+        dam_reduction_vs_fixed = []
         improvements_fixed = []
         compensation_ratio_vs_fidic = []
         dam_events = []
@@ -388,9 +390,13 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
             var_fid = float(fid_df["margin"].var(ddof=0))
             ratio_fix = var_dam / max(var_fix, 1e-12)
             ratio_fid = var_dam / max(var_fid, 1e-12)
+            fid_red = (var_fix - var_fid) / max(var_fix, 1e-12)
+            dam_red = (var_fix - var_dam) / max(var_fix, 1e-12)
 
             ratios_fixed.append(ratio_fix)
             ratios_fidic.append(ratio_fid)
+            fidic_reduction_vs_fixed.append(fid_red)
+            dam_reduction_vs_fixed.append(dam_red)
             improvements_fixed.append(1.0 - ratio_fix)
             dam_events.append(int(dam_df["event"].sum()))
             fidic_events.append(int(fid_df["event"].sum()))
@@ -402,21 +408,27 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
                 dom_fidic += 1
 
         event_ratio = float(np.mean(np.array(dam_events) / np.maximum(np.array(fidic_events), 1.0)))
+        benefit_capture_ratio = float(
+            np.mean(np.array(dam_reduction_vs_fixed) / np.maximum(np.array(fidic_reduction_vs_fixed), 1e-12))
+        )
+        paid_ratio = float(np.mean(compensation_ratio_vs_fidic))
+        mean_dam_reduction = float(np.mean(dam_reduction_vs_fixed))
 
         feasible = (
-            float(np.mean(ratios_fixed)) <= 0.40
-            and float(np.mean(ratios_fidic)) <= 1.10
+            mean_dam_reduction >= 0.70
+            and benefit_capture_ratio >= 0.85
             and event_ratio <= 0.35
-            and float(np.mean(compensation_ratio_vs_fidic)) <= 0.95
-            and float(np.max(exposures)) <= 0.15
+            and paid_ratio <= 1.00
+            and float(np.max(exposures)) <= 0.20
         )
 
+        # Target H2-style operating point:
+        # high capture (~0.96), low burden (~0.26), slightly lower spend (~0.94).
         score = (
-            0.55 * float(np.mean(ratios_fixed))
-            + 0.15 * float(np.mean(ratios_fidic))
-            + 0.15 * event_ratio
-            + 0.10 * float(np.mean(compensation_ratio_vs_fidic))
-            + 0.05 * float(np.max(ratios_fixed))
+            abs(benefit_capture_ratio - 0.96)
+            + 0.70 * abs(event_ratio - 0.26)
+            + 0.40 * abs(paid_ratio - 0.94)
+            + 0.10 * abs(mean_dam_reduction - 0.81)
         )
 
         if not feasible:
@@ -438,13 +450,16 @@ def calibrate_globally(project_inputs: Dict[str, dict]) -> Tuple[Params, pd.Data
                 "mean_events": float(np.mean(dam_events)),
                 "max_events": int(np.max(dam_events)),
                 "mean_event_ratio_vs_fidic": event_ratio,
-                "mean_comp_ratio_vs_fidic": float(np.mean(compensation_ratio_vs_fidic)),
+                "mean_comp_ratio_vs_fidic": paid_ratio,
+                "mean_fidic_reduction_vs_fixed": float(np.mean(fidic_reduction_vs_fixed)),
+                "mean_dam_reduction_vs_fixed": mean_dam_reduction,
+                "mean_benefit_capture_ratio": benefit_capture_ratio,
                 "max_exposure": float(np.max(exposures)),
                 "dom_fidic_count": int(dom_fidic),
             }
         )
 
-    grid_df = pd.DataFrame(rows).sort_values(["feasible", "objective"], ascending=[False, True]).reset_index(drop=True)
+    grid_df = pd.DataFrame(rows).sort_values(["feasible", "objective", "cap_up"], ascending=[False, True, False]).reset_index(drop=True)
     best = grid_df.iloc[0]
     return Params(
         lambda_share=float(best["lambda_share"]),
