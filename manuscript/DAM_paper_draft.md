@@ -173,45 +173,47 @@ The second-pass calibration was executed as a global multi-objective search with
 
 Selected global DAM parameters:
 - $\lambda=0.60$
-- $\delta=0.015$
-- $A^+=0.12$
+- $\delta=0.010$
+- $A^+=0.50$
 - $A^-=0.02$
 - WMVI fast-trigger: disabled in selected solution (deadband-gated level tracking only)
 
 Calibration manifest size and filter result:
-- 18,432 candidate settings evaluated.
-- 1,024 settings passed the practical feasibility filter.
+- 864 candidate settings evaluated.
+- 432 settings passed the practical feasibility filter.
 
 Out-of-sample back-test outcomes (2015–2025 windowed project simulations):
 - DAM vs Fixed-price margin-variance reduction:
-	- Road: 68.49%
-	- Building: 78.93%
-	- Water: 82.78%
-	- Mean reduction: 76.73%
+	- Road: 82.99%
+	- Building: 79.48%
+	- Water: 80.61%
+	- Mean reduction: 81.02%
 - DAM vs FIDIC 13.8 margin-variance change:
-	- Road: -96.96%
-	- Building: -31.66%
-	- Water: -7.60%
-	- Mean change: -45.41%
+	- Road: -6.34%
+	- Building: -28.23%
+	- Water: -21.22%
+	- Mean change: -18.59%
 - Average adjustment-event count:
-	- DAM: 3.67
+	- DAM: 5.33
 	- FIDIC 13.8: 20.67
-	- Mean event ratio (DAM/FIDIC): 18.1%
+	- Mean event ratio (DAM/FIDIC): 25.46%
+- Mean stabilisation-capture ratio relative to continuous FIDIC: 96.46%
+- Mean compensation ratio (DAM paid / FIDIC paid): 94.37%
 
 Table 1. Headline out-of-sample performance (tuned DAM)
 
 | Project | DAM vs Fixed margin variance | DAM vs FIDIC 13.8 margin variance | DAM adjustment events | FIDIC 13.8 adjustment events | DAM max employer exposure |
 |---|---:|---:|---:|---:|---:|
-| Road | +68.49% | -96.96% | 3 | 24 | 0.0964 |
-| Building | +78.93% | -31.66% | 3 | 18 | 0.0390 |
-| Water | +82.78% | -7.60% | 5 | 20 | 0.0407 |
-| Mean / total signal | +76.73% | -45.41% | 3.67 | 20.67 | — |
+| Road | +82.99% | -6.34% | 7 | 24 | 0.1134 |
+| Building | +79.48% | -28.23% | 4 | 18 | 0.0392 |
+| Water | +80.61% | -21.22% | 5 | 20 | 0.0422 |
+| Mean / total signal | +81.02% | -18.59% | 5.33 | 20.67 | — |
 
 Figure 3. Risk-exposure profile under Fixed-price, FIDIC 13.8, and tuned DAM
 
 ![Risk Exposure Comparison](../results/figures/risk_exposure_comparison.png)
 
-Interpretation: after correcting FIDIC to its level-multiplier form and enforcing persistence in DAM, the mechanism now delivers large stabilisation gains over fixed-price while using far fewer administrative events than continuous FIDIC indexation. However, deterministic variance remains above FIDIC in these windows, so the defensible claim is high stabilisation efficiency relative to fixed-price, not universal superiority to full continuous indexation.
+Interpretation: after correcting FIDIC to its level-multiplier form and enforcing persistence in DAM, the mechanism delivers strong stabilisation over fixed-price while preserving most of continuous FIDIC’s stabilisation at substantially lower event burden. In this run, DAM captures about 96% of continuous-indexation stabilisation with about 25% of the event burden and about 6% lower cumulative compensation.
 
 ### 6.5 Monte Carlo robustness extension (executed: 1,200 simulations per archetype)
 To test stability beyond the historical path, the paper now includes a Monte Carlo project simulation layer with joint cost-return and WMVI resampling, tail-shock injection, and full regime replay.
@@ -219,12 +221,12 @@ To test stability beyond the historical path, the paper now includes a Monte Car
 Key distributional findings:
 - Probability DAM beats Fixed-price on margin variance:
 	- Road: 1.000
-	- Building: 0.931
+	- Building: 0.981
 	- Water: 1.000
 - Probability DAM beats FIDIC 13.8 on margin variance:
-	- Road: 0.034
-	- Building: 0.031
-	- Water: 0.016
+	- Road: 0.115
+	- Building: 0.068
+	- Water: 0.053
 
 This robustness extension shows that the tuned DAM remains low-event and strongly superior to fixed-price under uncertainty, while full continuous FIDIC level-indexation often remains the tighter variance tracker. The final discussion therefore positions DAM as an adoptability-efficient compromise between fixed-price fragility and high-frequency continuous indexation burden.
 
