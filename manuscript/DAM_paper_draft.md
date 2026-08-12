@@ -95,6 +95,18 @@ Adjusted payment is $P_t^{*}=P_t+\Delta P_t$.
 2. FIDIC 13.8 baseline (competently parameterised with best plausible local indexation choices).
 3. DAM (triggered, capped, symmetric).
 
+### 4.5 Complementary lag-adjusted escalation layer (integrated from companion workstream)
+To align contract logic with observed transmission delays, this paper can be read alongside a lag-adjusted escalation specification:
+
+$$
+P_n^* = a_n + \sum_{k=0}^{K} \beta_k\left(\frac{M_{n-k}}{M_0}\right) + \sum_{j=0}^{J} \gamma_j\left(\frac{E_{n-j}}{E_0}\right) + \delta_n\left(\frac{EXR_n}{EXR_0}\right) + \sum_{h=0}^{H}\lambda_h\left(\frac{L_{n-h}}{L_0}\right) + \sum_{q=0}^{Q}\phi_q\,\Delta CBR_{n-q}.
+$$
+
+Interpretive role in this manuscript:
+- the lag-adjusted model is the continuous certificate-tracking layer,
+- DAM is the governance activation layer (trigger/cap/administrative control),
+- together they define a two-layer architecture: **tracking accuracy + operational deployability**.
+
 ## 5. Estimation and validation strategy
 ### 5.1 Stage 1: Artefact design
 Formal specification of WMVI, trigger bands, caps/collars, frequency, and ledger rules.
@@ -208,6 +220,20 @@ Figure 5. Monte Carlo reduction distributions
 
 ![Monte Carlo Reduction Distributions](../results/figures/mc_reduction_distributions.png)
 
+### 6.6 Comparative evidence from lag-adjusted certificate-tracking simulation
+Companion simulation evidence (4-year hypothetical run, monthly certificates) reports that lag-adjusted escalation materially out-tracks static contemporaneous FIDIC-style adjustment on fit metrics:
+
+- Factor MAE: FIDIC = 0.1374; Lag-adjusted = 0.0705.
+- Factor RMSE: FIDIC = 0.1975; Lag-adjusted = 0.0886.
+- Factor MAPE: FIDIC = 20.76%; Lag-adjusted = 11.49%.
+- Certificate MAE: FIDIC = 300,604.63 UGX; Lag-adjusted = 166,987.90 UGX.
+- Certificate RMSE: FIDIC = 593,161.95 UGX; Lag-adjusted = 255,314.99 UGX.
+- Cumulative gap vs proxy: FIDIC = -11,277,016.05 UGX; Lag-adjusted = -7,594,338.73 UGX.
+
+Monte Carlo findings from the same companion stream further indicate stochastic dominance of the lag-adjusted tracker on tracking-error metrics (reported as probability 1.000 for lower MAE/RMSE against the static benchmark over 5,000 runs).
+
+Synthesis for this DAM paper: the lag-adjusted formulation contributes **measurement fidelity**, while DAM contributes **contract governance under volatility**. This integration strengthens the portfolio claim that Uganda-specific reform should combine transmission-aware computation with trigger-based contractual administration.
+
 ## 7. Governance and implementation
 ### 7.1 Administrative workflow
 1. Monthly data freeze and validation.
@@ -227,6 +253,8 @@ The mechanism is drafted as an index-linked governance protocol that can fit pro
 
 ## 8. Discussion
 DAM reframes escalation from discretionary claims practice to explicit risk-sharing governance. If bidders internalise lower volatility risk, equilibrium bid premiums should decline, offering potential value-for-money gains for employers.
+
+With the lag-adjusted companion evidence, the policy recommendation becomes layered rather than binary: use lag-aware escalation computation to improve certificate realism, and use DAM trigger/cap governance to control event burden and exposure discipline.
 
 ## 9. Limitations
 - Behavioural response: bidders may optimise strategically against known trigger logic.
