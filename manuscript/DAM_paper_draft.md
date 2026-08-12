@@ -242,6 +242,14 @@ Figure 6. Monte Carlo employer-exposure ECDF
 
 ![Monte Carlo Exposure ECDF](../results/figures/mc_exposure_ecdf.png)
 
+Figure 7. Persistent applied-factor paths by regime
+
+![Applied Factor Paths](../results/figures/applied_factor_paths.png)
+
+Figure 8. Compensation–burden tradeoff surface (calibration grid)
+
+![Compensation Burden Tradeoff](../results/figures/compensation_burden_tradeoff.png)
+
 ### 6.6 Comparative evidence from lag-adjusted certificate-tracking simulation
 Companion simulation evidence (4-year hypothetical run, monthly certificates) reports that lag-adjusted escalation materially out-tracks static contemporaneous FIDIC-style adjustment on fit metrics:
 

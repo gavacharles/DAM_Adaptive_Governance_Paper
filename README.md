@@ -79,3 +79,5 @@ Current run status (2026-08-12):
   - `mc_reduction_distributions.png`
   - `mc_outperformance_probabilities.png`
   - `mc_exposure_ecdf.png`
+  - `applied_factor_paths.png`
+  - `compensation_burden_tradeoff.png`
