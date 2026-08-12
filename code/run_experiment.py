@@ -24,6 +24,11 @@ CAL_END = pd.Timestamp("2021-12-01")
 EVAL_START = pd.Timestamp("2022-01-01")
 EVAL_END = pd.Timestamp("2025-12-01")
 
+MC_SIMULATIONS = 1200
+MC_SEED = 42
+MC_SHOCK_PROB = 0.08
+MC_SHOCK_SCALE = 1.8
+
 
 PROJECTS = {
     "road": {
@@ -215,6 +220,98 @@ def summarize(df: pd.DataFrame, project: str, regime: str) -> dict:
         "worst_margin": worst_margin,
         "max_employer_exposure": worst_exposure,
     }
+
+
+def run_monte_carlo(project_inputs: Dict[str, dict], best: Params, n_sims: int = MC_SIMULATIONS) -> pd.DataFrame:
+    rng = np.random.default_rng(MC_SEED)
+    rows: List[dict] = []
+
+    for project, cfg in project_inputs.items():
+        months = cfg["months"]
+        payment_shares = cfg["payment_shares"]
+        cost_ratio_hist = cfg["cost_ratio"].reindex(months).ffill().bfill()
+        wmvi_hist = cfg["wmvi"].reindex(months).ffill().bfill()
+
+        ret = np.log(cost_ratio_hist).diff().dropna()
+        wmvi_lag = wmvi_hist.iloc[1:]
+        empirical = pd.DataFrame({"cost_ret": ret.values, "wmvi": wmvi_lag.values}).dropna()
+        if empirical.empty:
+            continue
+
+        fixed = Regime("Fixed-price", "fixed", trigger=9.0, gamma_up=0.0, gamma_down=0.0, cap_up=0.0, cap_down=0.0)
+        fidic = Regime("FIDIC 13.8", "fidic", trigger=0.0, gamma_up=0.0, gamma_down=0.0, cap_up=0.05, cap_down=0.05)
+        dam = Regime(
+            "DAM",
+            "dam",
+            trigger=best.trigger,
+            gamma_up=best.gamma_up,
+            gamma_down=best.gamma_down,
+            cap_up=best.cap_up,
+            cap_down=best.cap_down,
+        )
+        regimes = [fixed, fidic, dam]
+
+        for sim_id in range(1, n_sims + 1):
+            sampled_ix = rng.integers(0, len(empirical), size=len(months) - 1)
+            sampled = empirical.iloc[sampled_ix].reset_index(drop=True)
+
+            shock_mask = rng.random(len(sampled)) < MC_SHOCK_PROB
+            sampled.loc[shock_mask, "cost_ret"] = sampled.loc[shock_mask, "cost_ret"] * MC_SHOCK_SCALE
+            sampled.loc[shock_mask, "wmvi"] = sampled.loc[shock_mask, "wmvi"] * MC_SHOCK_SCALE
+
+            cost_path = np.empty(len(months))
+            wmvi_path = np.empty(len(months))
+            cost_path[0] = 1.0
+            wmvi_path[0] = float(wmvi_hist.iloc[0])
+            for t in range(1, len(months)):
+                cost_path[t] = cost_path[t - 1] * np.exp(float(sampled.loc[t - 1, "cost_ret"]))
+                wmvi_path[t] = float(sampled.loc[t - 1, "wmvi"]) + rng.normal(0.0, 0.08)
+
+            sim_cost = pd.Series(cost_path, index=months)
+            sim_wmvi = pd.Series(wmvi_path, index=months)
+
+            for rg in regimes:
+                ledger = simulate_regime(months, payment_shares, sim_cost, sim_wmvi, rg)
+                metrics = summarize(ledger, project=project, regime=rg.name)
+                metrics["sim_id"] = sim_id
+                rows.append(metrics)
+
+    return pd.DataFrame(rows)
+
+
+def summarize_monte_carlo(mc_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    agg = (
+        mc_df.groupby(["project", "regime"], as_index=False)
+        .agg(
+            mean_margin_variance=("margin_variance", "mean"),
+            p95_margin_variance=("margin_variance", lambda s: float(np.quantile(s, 0.95))),
+            mean_adjustment_count=("adjustment_count", "mean"),
+            p95_adjustment_count=("adjustment_count", lambda s: float(np.quantile(s, 0.95))),
+            mean_max_exposure=("max_employer_exposure", "mean"),
+            p95_max_exposure=("max_employer_exposure", lambda s: float(np.quantile(s, 0.95))),
+        )
+    )
+
+    pivot = mc_df.pivot_table(index=["project", "sim_id"], columns="regime", values="margin_variance", aggfunc="first").reset_index()
+    out_rows = []
+    for project, g in pivot.groupby("project"):
+        dam_better_fixed = float((g["DAM"] < g["Fixed-price"]).mean())
+        dam_better_fidic = float((g["DAM"] < g["FIDIC 13.8"]).mean())
+        reduction_vs_fixed = (g["Fixed-price"] - g["DAM"]) / g["Fixed-price"]
+        reduction_vs_fidic = (g["FIDIC 13.8"] - g["DAM"]) / g["FIDIC 13.8"]
+        out_rows.append(
+            {
+                "project": project,
+                "p_dam_beats_fixed": dam_better_fixed,
+                "p_dam_beats_fidic": dam_better_fidic,
+                "mean_reduction_vs_fixed": float(reduction_vs_fixed.mean()),
+                "p05_reduction_vs_fixed": float(np.quantile(reduction_vs_fixed, 0.05)),
+                "mean_reduction_vs_fidic": float(reduction_vs_fidic.mean()),
+                "p05_reduction_vs_fidic": float(np.quantile(reduction_vs_fidic, 0.05)),
+            }
+        )
+
+    return agg, pd.DataFrame(out_rows)
 
 
 def _train_slice(months: pd.DatetimeIndex) -> pd.DatetimeIndex:
@@ -512,6 +609,61 @@ def plot_project_margin_paths(ledger: pd.DataFrame, out_dir: Path) -> None:
     plt.close(fig)
 
 
+def plot_mc_reduction_distribution(mc_df: pd.DataFrame, out_dir: Path) -> None:
+    p = mc_df.pivot_table(index=["project", "sim_id"], columns="regime", values="margin_variance", aggfunc="first").reset_index()
+    p["reduction_vs_fixed"] = (p["Fixed-price"] - p["DAM"]) / p["Fixed-price"]
+    p["reduction_vs_fidic"] = (p["FIDIC 13.8"] - p["DAM"]) / p["FIDIC 13.8"]
+
+    projects = ["road", "building", "water"]
+    fig, axes = plt.subplots(3, 2, figsize=(12, 10), sharex="col")
+    for i, proj in enumerate(projects):
+        gp = p[p["project"] == proj]
+        axes[i, 0].hist(gp["reduction_vs_fixed"], bins=30, color="tab:blue", alpha=0.85)
+        axes[i, 1].hist(gp["reduction_vs_fidic"], bins=30, color="tab:purple", alpha=0.85)
+        axes[i, 0].axvline(0, color="black", linewidth=1)
+        axes[i, 1].axvline(0, color="black", linewidth=1)
+        axes[i, 0].set_ylabel(f"{proj.title()}\ncount")
+    axes[0, 0].set_title("DAM reduction vs Fixed")
+    axes[0, 1].set_title("DAM reduction vs FIDIC 13.8")
+    axes[-1, 0].set_xlabel("Fractional reduction")
+    axes[-1, 1].set_xlabel("Fractional reduction")
+    fig.tight_layout()
+    fig.savefig(out_dir / "mc_reduction_distributions.png", dpi=180)
+    plt.close(fig)
+
+
+def plot_mc_outperformance_prob(mc_out: pd.DataFrame, out_dir: Path) -> None:
+    x = np.arange(len(mc_out))
+    width = 0.35
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(x - width / 2, mc_out["p_dam_beats_fixed"], width=width, label="P(DAM beats Fixed)")
+    ax.bar(x + width / 2, mc_out["p_dam_beats_fidic"], width=width, label="P(DAM beats FIDIC)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(mc_out["project"].str.title())
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Probability")
+    ax.set_title("Monte Carlo Outperformance Probabilities")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(out_dir / "mc_outperformance_probabilities.png", dpi=180)
+    plt.close(fig)
+
+
+def plot_mc_exposure_ecdf(mc_df: pd.DataFrame, out_dir: Path) -> None:
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for regime, g in mc_df.groupby("regime"):
+        x = np.sort(g["max_employer_exposure"].values)
+        y = np.arange(1, len(x) + 1) / len(x)
+        ax.plot(x, y, linewidth=2.0, label=regime)
+    ax.set_xlabel("Max employer exposure")
+    ax.set_ylabel("Empirical CDF")
+    ax.set_title("Monte Carlo Exposure Distribution by Regime")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(out_dir / "mc_exposure_ecdf.png", dpi=180)
+    plt.close(fig)
+
+
 def main() -> None:
     code_root = Path(__file__).resolve().parent
     paper_root = code_root.parent
@@ -594,6 +746,12 @@ def main() -> None:
         ]
     ).to_csv(out_data / "selected_parameters.csv", index=False)
 
+    mc_df = run_monte_carlo(project_inputs, best, n_sims=MC_SIMULATIONS)
+    mc_summary_df, mc_outperf_df = summarize_monte_carlo(mc_df)
+    mc_df.to_csv(out_data / "monte_carlo_metrics.csv", index=False)
+    mc_summary_df.to_csv(out_data / "monte_carlo_summary.csv", index=False)
+    mc_outperf_df.to_csv(out_data / "monte_carlo_outperformance.csv", index=False)
+
     plot_formula(out_fig)
     plot_wmvi_timeline(wmvi, out_fig)
     plot_risk_exposure(ledger_all, out_fig)
@@ -602,6 +760,9 @@ def main() -> None:
     plot_summary_bars(summary_df, out_fig)
     plot_event_counts(summary_df, out_fig)
     plot_project_margin_paths(ledger_all, out_fig)
+    plot_mc_reduction_distribution(mc_df, out_fig)
+    plot_mc_outperformance_prob(mc_outperf_df, out_fig)
+    plot_mc_exposure_ecdf(mc_df, out_fig)
     dam_first = ledger_all[(ledger_all["project"] == "road") & (ledger_all["regime"] == "DAM")].copy()
     stress_regime = Regime(
         "DAM",
@@ -617,6 +778,7 @@ def main() -> None:
     print("Experiment complete.")
     print(f"Tables: {out_data}")
     print(f"Figures: {out_fig}")
+    print(f"Monte Carlo simulations: {MC_SIMULATIONS}")
 
 
 if __name__ == "__main__":

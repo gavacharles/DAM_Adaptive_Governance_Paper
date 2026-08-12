@@ -182,6 +182,29 @@ Figure 3. Risk-exposure profile under Fixed-price, FIDIC 13.8, and tuned DAM
 
 Interpretation: the tuned DAM currently delivers stronger margin stabilization than both comparators in the three stylised archetypes while keeping adjustment events materially lower than FIDIC-style operation. This supports H1/H2 directionally, with additional robustness and legal-operability discussion retained for final drafting.
 
+### 6.5 Monte Carlo robustness extension (executed: 1,200 simulations per archetype)
+To test stability beyond the historical path, the paper now includes a Monte Carlo project simulation layer with joint cost-return and WMVI resampling, tail-shock injection, and full regime replay.
+
+Key distributional findings:
+- Probability DAM beats Fixed-price on margin variance:
+	- Road: 0.741
+	- Building: 0.463
+	- Water: 0.683
+- Probability DAM beats FIDIC 13.8 on margin variance:
+	- Road: 0.284
+	- Building: 0.273
+	- Water: 0.351
+
+This robustness extension shows that the tuned DAM remains low-event and exposure-bounded, but advantage against FIDIC is state-dependent under synthetic futures. The final discussion therefore treats DAM as a governance-efficient stabiliser with scenario-contingent dominance, not a universal winner in all stochastic paths.
+
+Figure 4. Monte Carlo outperformance probabilities
+
+![Monte Carlo Outperformance Probabilities](../results/figures/mc_outperformance_probabilities.png)
+
+Figure 5. Monte Carlo reduction distributions
+
+![Monte Carlo Reduction Distributions](../results/figures/mc_reduction_distributions.png)
+
 ## 7. Governance and implementation
 ### 7.1 Administrative workflow
 1. Monthly data freeze and validation.

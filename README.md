@@ -58,6 +58,9 @@ Current run status (2026-08-12):
 - Tables: `results/tables/`
   - `backtest_summary.csv`
   - `calibration_manifest.csv`
+  - `monte_carlo_metrics.csv`
+  - `monte_carlo_summary.csv`
+  - `monte_carlo_outperformance.csv`
   - `monthly_ledger.csv`
   - `selected_parameters.csv`
   - `wmvi_series.csv`
@@ -71,3 +74,6 @@ Current run status (2026-08-12):
   - `variance_comparison_bars.png`
   - `adjustment_event_counts.png`
   - `project_margin_paths.png`
+  - `mc_reduction_distributions.png`
+  - `mc_outperformance_probabilities.png`
+  - `mc_exposure_ecdf.png`
