@@ -37,6 +37,7 @@ Alternative standard forms (including JBCC-style inflation treatment) illustrate
 ## 3. Data and artefact inputs
 ### 3.1 Data sources
 - National panel (`panel_v1.0`) with macro variables.
+- Explicit macro channels in WMVI: exchange rate, CPI, central bank rate, lending rate, and private credit.
 - CIPI series and material basket shares.
 - P6 transmission sensitivity vector.
 
@@ -57,6 +58,8 @@ $$
 $$
 
 Weights are derived from a blend of macro transmission sensitivities and CIPI basket relevance.
+
+In the implemented artefact, macro weights are sensitivity-informed for exchange-rate/CPI and structurally anchored for central bank rate, lending rate, and private credit, then normalised to sum to one. The exact run-specific weights are exported as `results/tables/wmvi_macro_weights.csv`.
 
 ### 4.2 Trigger-band logic
 Let $L<0<U$ be lower/upper trigger bands. Adjustment is activated only if $\text{WMVI}_t \notin [L,U]$.
@@ -139,13 +142,13 @@ Variance and tail metrics across fixed-price, FIDIC 13.8, and DAM; shock episode
 - Trigger design should sharply reduce event count vs continuous indexation.
 
 ### 6.4 Executed tuning pass and current empirical status (run date: 2026-08-12)
-The second-pass calibration was executed as a global multi-objective search with asymmetric DAM parameters and dual-baseline scoring (Fixed-price and FIDIC 13.8), using the hard train/eval split in code.
+The second-pass calibration was executed as a global multi-objective search with asymmetric DAM parameters and dual-baseline scoring (Fixed-price and FIDIC 13.8), using the hard train/eval split in code. In this updated run, WMVI explicitly includes exchange rate, CPI, central bank rate, lending rate, and private credit channels.
 
 Selected global DAM parameters:
-- Trigger = 1.15
+- Trigger = 1.05
 - $\gamma_{up}=0.10$
 - $\gamma_{down}=0.015$
-- $cap_{up}=0.025$
+- $cap_{up}=0.008$
 - $cap_{down}=0.008$
 
 Calibration manifest size and filter result:
@@ -154,48 +157,48 @@ Calibration manifest size and filter result:
 
 Out-of-sample back-test outcomes (2015–2025 windowed project simulations):
 - DAM vs Fixed-price margin-variance reduction:
-	- Road: 11.60%
-	- Building: 14.62%
-	- Water: 17.30%
-	- Mean reduction: 14.51%
+	- Road: 2.05%
+	- Building: 9.78%
+	- Water: 5.73%
+	- Mean reduction: 5.85%
 - DAM vs FIDIC 13.8 margin-variance change:
-	- Road: +2.24%
-	- Building: +1.16%
-	- Water: +6.70%
-	- Mean improvement: +3.36%
+	- Road: -10.70%
+	- Building: -2.24%
+	- Water: -6.37%
+	- Mean change: -6.43%
 - Average adjustment-event count:
-	- DAM: 6.0
+	- DAM: 6.67
 	- FIDIC 13.8: 19.67
 
 Table 1. Headline out-of-sample performance (tuned DAM)
 
 | Project | DAM vs Fixed margin variance | DAM vs FIDIC 13.8 margin variance | DAM adjustment events | FIDIC 13.8 adjustment events | DAM max employer exposure |
 |---|---:|---:|---:|---:|---:|
-| Road | +11.60% | +2.24% | 6 | 23 | 0.0065 |
-| Building | +14.62% | +1.16% | 6 | 17 | 0.0055 |
-| Water | +17.30% | +6.70% | 6 | 19 | 0.0056 |
-| Mean / total signal | +14.51% | +3.36% | 6.00 | 19.67 | — |
+| Road | +2.05% | -10.70% | 7 | 23 | 0.0018 |
+| Building | +9.78% | -2.24% | 6 | 17 | 0.0019 |
+| Water | +5.73% | -6.37% | 7 | 19 | 0.0020 |
+| Mean / total signal | +5.85% | -6.43% | 6.67 | 19.67 | — |
 
 Figure 3. Risk-exposure profile under Fixed-price, FIDIC 13.8, and tuned DAM
 
 ![Risk Exposure Comparison](../results/figures/risk_exposure_comparison.png)
 
-Interpretation: the tuned DAM currently delivers stronger margin stabilization than both comparators in the three stylised archetypes while keeping adjustment events materially lower than FIDIC-style operation. This supports H1/H2 directionally, with additional robustness and legal-operability discussion retained for final drafting.
+Interpretation: with the expanded macro channel set, tuned DAM remains strongly better than fixed-price and still materially lower-event than FIDIC, but no longer dominates FIDIC on deterministic margin variance. This reframes the contribution as governance efficiency plus fixed-price stabilisation, with FIDIC-relative gains becoming scenario-dependent.
 
 ### 6.5 Monte Carlo robustness extension (executed: 1,200 simulations per archetype)
 To test stability beyond the historical path, the paper now includes a Monte Carlo project simulation layer with joint cost-return and WMVI resampling, tail-shock injection, and full regime replay.
 
 Key distributional findings:
 - Probability DAM beats Fixed-price on margin variance:
-	- Road: 0.741
-	- Building: 0.463
-	- Water: 0.683
+	- Road: 0.871
+	- Building: 0.556
+	- Water: 0.863
 - Probability DAM beats FIDIC 13.8 on margin variance:
-	- Road: 0.284
-	- Building: 0.273
-	- Water: 0.351
+	- Road: 0.143
+	- Building: 0.183
+	- Water: 0.265
 
-This robustness extension shows that the tuned DAM remains low-event and exposure-bounded, but advantage against FIDIC is state-dependent under synthetic futures. The final discussion therefore treats DAM as a governance-efficient stabiliser with scenario-contingent dominance, not a universal winner in all stochastic paths.
+This robustness extension shows that the tuned DAM remains low-event and exposure-bounded, with high probability of improving on fixed-price outcomes, but only intermittent dominance over FIDIC under synthetic futures. The final discussion therefore treats DAM as a governance-efficient stabiliser with scenario-contingent FIDIC performance, not a universal winner.
 
 Figure 4. Monte Carlo outperformance probabilities
 
