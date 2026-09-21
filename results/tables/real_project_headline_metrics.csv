@@ -1,0 +1,2 @@
+n_certificates,window_start,window_end,fidic_events,dam_events,event_ratio_dam_over_fidic_pct,compensation_ratio_dam_over_fidic_pct,mean_approval_lag_days,median_approval_lag_days,dam_risk_reduction_vs_fixed_pct,fidic_risk_reduction_vs_fixed_pct
+38,2019-04-25,2024-02-29,38,22,57.89473684210527,59.74268395021226,11.08108108108108,8.0,80.4498369916439,100.0

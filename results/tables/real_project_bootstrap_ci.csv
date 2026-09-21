@@ -1,0 +1,4 @@
+regime,risk_reduction_vs_fixed_pct_median,risk_reduction_vs_fixed_pct_lo,risk_reduction_vs_fixed_pct_hi,events_median,events_lo,events_hi,compensation_ugx_bn_median,compensation_ugx_bn_lo,compensation_ugx_bn_hi
+fixed,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+fidic_real,100.0,100.0,100.0,38.0,37.0,38.0,52.5809470192733,27.52113088111398,79.14114020603486
+dam,80.55478870896441,76.41636844368155,84.10622891253938,24.0,17.0,31.0,31.444716900794454,16.504740763539363,47.40634486891407
