@@ -6,7 +6,6 @@ Manuscript, method notes and Python code for DAM, a trigger-gated alternative to
 
 | Path | What it is |
 |---|---|
-| `manuscript/` | Paper draft and figure specifications |
 | `methods/` | Design specification and calibration protocol |
 | `implementation/` | Execution runbook |
 | `code/src/contract/` | Core modules: `dam_engine.py`, `wmvi.py`, `calibrate.py`, `backtest.py`, `real_project.py` |
